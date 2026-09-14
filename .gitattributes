@@ -1,0 +1,7 @@
+# Shell scripts and Dockerfiles must keep LF line endings regardless of
+# platform -- a CRLF shebang line ("#!/usr/bin/env bash\r") fails to
+# execute on real Linux/WSL, even though Git Bash on Windows tolerates
+# it inconsistently. Without this, Windows git's autocrlf=true would
+# silently convert these to CRLF on checkout.
+*.sh text eol=lf
+Dockerfile text eol=lf
