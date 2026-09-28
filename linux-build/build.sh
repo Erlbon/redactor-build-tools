@@ -44,9 +44,14 @@ docker build -t "$IMAGE_NAME" "$SCRIPT_DIR"
 
 BUILD_CMD="pip install -r requirements.txt"
 if [ "$RUN_TESTS" = "--test" ]; then
-    BUILD_CMD="$BUILD_CMD && python3 -m pytest -q"
+    BUILD_CMD="$BUILD_CMD && python -m pytest -q"
 fi
-BUILD_CMD="$BUILD_CMD && pyinstaller --noconfirm $SPEC_FILE"
+BUILD_CMD="$BUILD_CMD && pyinstaller --noconfirm --distpath dist-linux --workpath build-linux $SPEC_FILE"
+# The container runs as root; on a Linux host (e.g. GitHub Actions) that
+# would leave root-owned files the next step (package.sh) can't touch.
+# Hand everything the build wrote back to the calling user. (A no-op on
+# Docker Desktop for Windows, whose bind mounts ignore ownership.)
+BUILD_CMD="$BUILD_CMD && chown -R $(id -u):$(id -g) /src"
 
 echo "==> Building $SPEC_FILE against $REPO_PATH..."
 # MSYS_NO_PATHCONV=1 stops Git Bash on Windows from "helpfully"
@@ -60,4 +65,4 @@ MSYS_NO_PATHCONV=1 docker run --rm \
     "$IMAGE_NAME" \
     bash -c "$BUILD_CMD"
 
-echo "==> Done. Output in ${REPO_PATH}/dist/"
+echo "==> Done. Output in ${REPO_PATH}/dist-linux/"

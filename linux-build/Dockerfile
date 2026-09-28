@@ -23,21 +23,34 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     QT_QPA_PLATFORM=offscreen
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-venv \
+# Python 3.12 from the deadsnakes PPA -- the same version the Windows
+# releases build with (GitHub Actions setup-python 3.12), rather than
+# 22.04's own 3.10. python3.12-dev brings libpython3.12.so, which
+# PyInstaller needs to bundle.
+#
+# The Qt libraries: PyQt6's bundled Qt still needs these system
+# libraries at runtime -- without them, even a headless/offscreen
+# QApplication() fails to construct, which matters both for
+# `pyinstaller` itself (it imports the app's modules to trace
+# dependencies) and for running the test suite in-container.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends software-properties-common gpg-agent \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.12 python3.12-venv python3.12-dev \
         build-essential \
         git \
-        # PyQt6's bundled Qt still needs these system libraries at
-        # runtime -- without them, even a headless/offscreen
-        # QApplication() fails to construct, which matters both for
-        # `pyinstaller` itself (it imports the app's modules to trace
-        # dependencies) and for running the test suite in-container.
         libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 \
         libgl1 libegl1 libdbus-1-3 \
         fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --upgrade pip pyinstaller
+# Everything pip installs goes into a venv first on PATH, so plain
+# `python` / `pip` mean 3.12.
+RUN python3.12 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --upgrade pip pyinstaller pytest
 
 WORKDIR /src
 # Deliberately no COPY of app source here -- see build.sh, which bind-
