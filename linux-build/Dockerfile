@@ -33,6 +33,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # QApplication() fails to construct, which matters both for
 # `pyinstaller` itself (it imports the app's modules to trace
 # dependencies) and for running the test suite in-container.
+#
+# ffmpeg and mkvtoolnix are for the TESTS only (videoredactor's
+# integration tests run the real tools); nothing bundles them -- the
+# apps find external tools on the user's PATH.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends software-properties-common gpg-agent \
     && add-apt-repository -y ppa:deadsnakes/ppa \
@@ -44,6 +48,7 @@ RUN apt-get update \
         libxcb-cursor0 libxcb-xinerama0 libxkbcommon-x11-0 \
         libgl1 libegl1 libdbus-1-3 \
         fontconfig \
+        ffmpeg mkvtoolnix \
     && rm -rf /var/lib/apt/lists/*
 
 # Everything pip installs goes into a venv first on PATH, so plain
