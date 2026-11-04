@@ -49,6 +49,27 @@ an error — fine for a first "does it build and run" pass; a real
 Linux release would want its own icon/`.desktop`-file packaging (e.g.
 via an AppImage) on top of this.
 
+## `devenv/`: each repo tests in its own `.venv`
+
+`devenv/venv_sync.py` gives a repo its own `.venv`, holding exactly the redactor_common its pin names
+(`requirements.txt`, or `pyproject.toml` when there is none), and prints that venv's python. Every
+repo's `.githooks/pre-push` calls it first and runs pytest with the python it prints:
+
+    PY="$(python ../redactor-build-tools/devenv/venv_sync.py .)" && "$PY" -m pytest
+
+- **Why:** on 2026-11-04 all repos tested against one shared install of redactor_common while they were
+  pinned to different tags; installing one repo's pin broke three other repos' pushes in one evening.
+- **First run** makes `.venv` (with `--system-site-packages`, so PyQt6 and the other big packages come
+  from the shared Python) and installs the requirements: about 30 s. redactor_common itself always goes
+  *into* the venv; a shared copy seen through the system packages does not count.
+- **Later runs** only check (about 0.3 s), and reinstall when `requirements.txt` changed or the venv's
+  redactor_common is not the pinned version.
+- **Rule:** never `pip install` a repo's requirements into the shared Python. Use the repo's venv:
+  `.venv\Scripts\python -m pytest`, `.venv\Scripts\python bump_version.py`.
+- The hooks find this repo next to the main checkout (so a push from a git worktree works too), or
+  where `REDACTOR_BUILD_TOOLS` points. Clone it next to the app repos.
+- Tests: `python -m pytest devenv` (the last two make a real venv in a temp folder).
+
 ## License
 
 No license file yet — this is internal tooling, not a distributed
