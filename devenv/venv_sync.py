@@ -16,6 +16,15 @@ What it does, in <repo>:
 
 Usage (from a hook):  PY="$(python <tools>/devenv/venv_sync.py <repo>)" && "$PY" -m pytest
 Standard library only: it runs before anything is installed.
+
+--build (2026-11-26): the same for <repo>/.venv-build, the venv the exe and the installer are built in. It does NOT see the
+shared Python's packages (nor the user's own site-packages), so PyInstaller bundles only what the requirements install.
+Through --system-site-packages it also bundled whatever optional package happened to be installed on the PC: mp3redactor's
+exe grew from 75 to 95 MB with Pillow, lxml and cryptography, which music_tag, bs4 and requests import when they find them.
+Since releases are built on the PC (redactor_common's release tool), not on GitHub's clean runners, the build venv must be
+as clean as theirs. It is made once (it downloads PyQt6 and the rest) and then only checked, like .venv.
+
+Usage (from build_exe.bat):  python <tools>/devenv/venv_sync.py --build <repo>
 """
 
 import hashlib
@@ -27,6 +36,8 @@ from pathlib import Path
 
 PIN = re.compile(r"redactor_common\s*@\s*git\+https://github\.com/Erlbon/redactor_common\.git@(\d{4}-\d{2}-\d{2}-\d{2})")
 STAMP = "redactor-venv.json"
+TEST_VENV = ".venv"           # tests: the shared Python's packages seen through --system-site-packages
+BUILD_VENV = ".venv-build"    # builds: nothing but the requirements (and PyInstaller)
 PROBE = ("import importlib.metadata as m, json\n"
          "try:\n"
          "    d = m.distribution('redactor_common')\n"
@@ -91,14 +102,14 @@ def run(cmd):
         raise SystemExit("venv_sync: failed (exit %d): %s" % (done.returncode, " ".join(str(c) for c in cmd)))
 
 
-def sync(repo, base_python=sys.executable):
-    """Make <repo>/.venv right and return its python."""
+def sync(repo, base_python=sys.executable, build=False):
+    """Make <repo>/.venv (build: <repo>/.venv-build, without the shared packages) right and return its python."""
     repo = Path(repo).resolve()
-    venv = repo / ".venv"
+    venv = repo / (BUILD_VENV if build else TEST_VENV)
     py = venv_python(venv)
     if not py.exists():
-        say("making %s" % venv)
-        run([base_python, "-m", "venv", "--system-site-packages", venv])
+        say("making %s%s" % (venv, " (clean: the first time it downloads every requirement)" if build else ""))
+        run([base_python, "-m", "venv", venv] if build else [base_python, "-m", "venv", "--system-site-packages", venv])
         py = venv_python(venv)
     req = requirement_file(repo)
     tag = pinned_tag(req.read_text(encoding="utf-8")) if req else None
@@ -112,25 +123,30 @@ def sync(repo, base_python=sys.executable):
     if stamp.get("fingerprint") == current and (want is None or own_redactor_common(py, venv) == want):
         return py
     if req is not None and req.name == "requirements.txt":
-        say("installing %s into .venv" % req.name)
+        say("installing %s into %s" % (req.name, venv.name))
         run([py, "-m", "pip", "install", "-q", "--disable-pip-version-check", "-r", req])
     elif req is not None:
-        say("installing the project (editable) into .venv")
+        say("installing the project (editable) into %s" % venv.name)
         run([py, "-m", "pip", "install", "-q", "--disable-pip-version-check", "-e", repo])
+    if build:
+        run([py, "-m", "pip", "install", "-q", "--disable-pip-version-check", "pyinstaller>=6.6"])
     if want is not None and own_redactor_common(py, venv) != want:
-        say("installing redactor_common %s into .venv" % tag)
+        say("installing redactor_common %s into %s" % (tag, venv.name))
         run([py, "-m", "pip", "install", "-q", "--disable-pip-version-check", "--force-reinstall", "--no-deps",
              "redactor_common @ git+https://github.com/Erlbon/redactor_common.git@" + tag])
         have = own_redactor_common(py, venv)
         if have != want:
-            raise SystemExit("venv_sync: .venv has redactor_common %s, the pin wants %s" % (have, want))
+            raise SystemExit("venv_sync: %s has redactor_common %s, the pin wants %s" % (venv.name, have, want))
     stamp_path.write_text(json.dumps({"fingerprint": current, "redactor_common": want}), encoding="utf-8")
     return py
 
 
 def main(argv):
-    repo = Path(argv[1]) if len(argv) > 1 else Path(".")
-    print(Path(sync(repo)).as_posix())
+    args = argv[1:]
+    build = "--build" in args
+    args = [a for a in args if a != "--build"]
+    repo = Path(args[0]) if args else Path(".")
+    print(Path(sync(repo, build=build)).as_posix())
     return 0
 
 

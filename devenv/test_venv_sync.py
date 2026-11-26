@@ -69,5 +69,31 @@ def test_a_shared_copy_seen_through_the_system_packages_does_not_count(tmp_path)
         venv_sync.PROBE = real
 
 
+def test_the_build_venv_sees_only_its_own_packages(tmp_path, monkeypatch):
+    """--build: .venv-build, made without --system-site-packages, so PyInstaller cannot bundle what happens to be installed in
+    the shared Python or the user's site-packages (mp3redactor 2026-11-26: Pillow, lxml, cryptography, +20 MB). The venv is
+    made for real; the pip installs are only recorded (no network)."""
+    (tmp_path / "requirements.txt").write_text("# nothing pinned\n", encoding="utf-8")
+    real_run, installs = venv_sync.run, []
+    monkeypatch.setattr(venv_sync, "run", lambda cmd: real_run(cmd) if "venv" in map(str, cmd[1:3]) else installs.append(cmd))
+    py = venv_sync.sync(tmp_path, build=True)
+    assert py.exists() and (tmp_path / ".venv-build").is_dir() and not (tmp_path / ".venv").exists()
+    cfg = (tmp_path / ".venv-build" / "pyvenv.cfg").read_text(encoding="utf-8")
+    assert "include-system-site-packages = false" in cfg
+    probe = "import site, sys; print(site.ENABLE_USER_SITE, any('site-packages' in p and '.venv-build' not in p for p in sys.path))"
+    out = subprocess.run([str(py), "-c", probe], capture_output=True, text=True, check=True).stdout.split()
+    assert out == ["False", "False"]                        # neither the user's nor the shared site-packages
+    assert any("pyinstaller>=6.6" in map(str, cmd) for cmd in installs)
+    assert all("--system-site-packages" not in map(str, cmd) for cmd in installs)
+
+
+def test_build_on_the_command_line(tmp_path, monkeypatch, capsys):
+    seen = []
+    monkeypatch.setattr(venv_sync, "sync", lambda repo, build=False: seen.append((Path(repo), build)) or Path("p"))
+    assert venv_sync.main(["venv_sync.py", "--build", str(tmp_path)]) == 0
+    assert venv_sync.main(["venv_sync.py", str(tmp_path)]) == 0
+    assert seen == [(tmp_path, True), (tmp_path, False)]
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

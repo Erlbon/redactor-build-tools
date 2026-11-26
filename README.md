@@ -68,7 +68,13 @@ repo's `.githooks/pre-push` calls it first and runs pytest with the python it pr
   `.venv\Scripts\python -m pytest`, `.venv\Scripts\python bump_version.py`.
 - The hooks find this repo next to the main checkout (so a push from a git worktree works too), or
   where `REDACTOR_BUILD_TOOLS` points. Clone it next to the app repos.
-- Tests: `python -m pytest devenv` (the last two make a real venv in a temp folder).
+- **Builds use a second venv, `.venv-build`** (`venv_sync.py --build .`, called by each app's `build_exe.bat`):
+  made *without* `--system-site-packages`, so it sees neither the shared Python's packages nor the user's own
+  site-packages, only the requirements and PyInstaller. Through the test `.venv`, PyInstaller also bundled
+  optional packages that happened to be installed on the PC (mp3redactor's exe, 2026-11-26: Pillow, lxml and
+  cryptography, 75 MB became 95 MB). Releases are built on the PC since the update framework, so the build
+  venv must be as clean as GitHub's runners were. It downloads everything once, then only checks.
+- Tests: `python -m pytest devenv` (three of them make a real venv in a temp folder).
 
 ## License
 
